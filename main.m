@@ -91,6 +91,7 @@ sigma_eff = 1;
 A = 10; %receiver area in m^2
 linear_QE = 0.4; %QE in low-signal intensity region
 t_d = 100e-9; %dead time in seconds
+t_d = 2*dt; %currently just to investigate Liu OE PMT correction
 paralyzable = 0; %boolean for paralyzable detector
 
 
@@ -134,41 +135,42 @@ for i=1:size(time,2)
     N_recorded_curve_par(i) = PMT_QE(N_received_curve(i), dt, t_d, linear_QE, 1);
 end
 
+%% begin including noise
+f_n = 1000000; %avg freq of noise events in Hz
+n_n = f_n*dt;
+
+%generate noise photons from a poisson distribution with parameter=f_n*dt
+noise = poissrnd(n_n, size(time));
+
+N_total_received = N_received_curve + noise;
+
+%% plots
 f = figure;
 ax1 = axes(f);
 hold on
 plot(ax1, time, N_received_curve, 'b-')
-plot(ax1, time, N_recorded_curve_nonpar, 'r-')
-plot(ax1, time, N_recorded_curve_par, 'g-')
-% ax1.XColor = 'b';
-% ax1.YColor = 'b';
-% ax1.XAxisLocation = 'top';
-% ax1.YAxisLocation = 'right';
+plot(ax1, time, N_total_received, 'r-')
+legend({"$N_{sig,received}$", "$N_{tot,received}$"}, 'interpreter', 'latex')
 title("N Received Photons vs Time")
 xlabel("Time (sec)")
 ylabel("N Received Photons")
-% ax2 = axes(f);
-% hold on
-% plot(ax2, altitudes,constituent_density, 'r-')
-% ax2.XColor = 'r';
-% ax2.YColor = 'r';
-% ax2.Color = 'none';
-% ax2.XAxisLocation = 'bottom';
-% ax2.YAxisLocation = 'left';
-% ax1.Box = 'off';
-% ax2.Box = 'off';
+
+%estimate SNR
+n_noise_tot = sum(noise);
+n_sig_tot = sum(N_total_received);
+SNR_est_simple = n_sig_tot/n_noise_tot;
+text(0,max(N_total_received), sprintf("SNR: %0.3f", SNR_est_simple))
+
+% figure
+% xcorr_res = xcorr(constituent_density, power_curve);
+% plot(xcorr_res)
+% xlabel("Time (indexed, shifted)")
+% ylabel("Cons. Density $\star$ Pow. Curve", 'Interpreter','latex')
+% title("Cross correlation of power curve and density profile")
+% N_sent
+% N_received = sum(N_received_curve)
+% ratio = N_received/N_sent
 
 
-% plot(time, N_sent_curve)
-% ylabel("N Sent Photons")
 
-figure
-xcorr_res = xcorr(constituent_density, power_curve);
-plot(xcorr_res)
-xlabel("Time (indexed, shifted)")
-ylabel("Cons. Density $\star$ Pow. Curve", 'Interpreter','latex')
-title("Cross correlation of power curve and density profile")
-N_sent
-N_received = sum(N_received_curve)
-ratio = N_received/N_sent
 

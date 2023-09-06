@@ -17,8 +17,8 @@ if paralyzable
      %saturated paralyzable PMT - will output some suppresed number
     else
         
-        %for now, assume that full extinction/paralyzation occurs at 2x
-        %(1/deadtime), linear interpolation
+        %for now, assume that full extinction/paralyzation occurs at
+        %frequencies greater than 2x (1/deadtime), linear interpolation
         N_recorded = max([0, (f_dead*dt - (f_received-f_dead)*dt) * linear_QE]);
         
     end
