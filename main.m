@@ -1,7 +1,7 @@
 %Lidar return simulation via lidar eqn
 
 close all
-clear all
+clearvars
 clc
 
 %fundamental constants
@@ -27,22 +27,22 @@ plot(altitudes,constituent_density)
 title("Constituent Density vs Altitude")
 xlabel("Altitude (m)")
 ylabel("Constituent Density (normalized)")
-% 
-%TODO: go from delta -> square -> curve
+%
+%Square laser power output
 % t_start = 0; %laser turn on time (s)
 % t_stop = t_start+dt; %laser turn off time (s)
 % p_on = 1; %laser power in W when on
-% 
+%
 % %total time window where events may be happening (accounting for ToF for last photons emitted by laser)
-% t_bounds = [0,t_stop+2*z_bounds(2)/c]; 
+% t_bounds = [0,t_stop+2*z_bounds(2)/c];
 % time = t_bounds(1):dt:t_bounds(2); %time axis of power curve
-% 
+%
 % %use this for delta & square function power curve
 % power_curve = [zeros(1,nearestDiv(t_start-t_bounds(1),dt)), p_on * ones(1,nearestDiv(t_stop-t_start,dt)), zeros(1,nearestDiv(t_bounds(2)+dt-t_stop,dt))];
 
 
 %for gaussian-like curves
-stdev = 3*dt;
+stdev = 3*dt; %standard deviation of laser power curve is 3 dt bins
 cutoff_num_stds = 5; %truncate guassian after n stds
 
 t_start = 0; %laser turn on time (s)
@@ -52,7 +52,7 @@ p_on = 1; %laser power in W when on
 
 
 %total time window where events may be happening (accounting for ToF for last photons emitted by laser)
-t_bounds = [0,t_stop+2*z_bounds(2)/c]; 
+t_bounds = [0,t_stop+2*z_bounds(2)/c];
 time = t_bounds(1):dt:t_bounds(2); %time axis of power curve
 p_peak = 1; %peak power in W
 
@@ -66,6 +66,7 @@ power_curve = [power_curve/max(power_curve)*p_peak, zeros(1,size(time,2)-size(po
 % figure
 % plot(time,power_curve);
 
+%generate curve of N_sent photons over time
 energy_curve = power_curve*dt; %total energy emitted by laser (j) at each timestep
 N_sent_curve = floor(energy_curve/E_photon); %total number of photons emitted at each timestep
 N_sent = sum(N_sent_curve); %total number of photons emitted during pulse
@@ -88,18 +89,18 @@ T_c = 0.95;
 sigma_eff = 1;
 
 %receiver parameters
-A = 10; %receiver area in m^2
+A = 100; %receiver area in m^2
 linear_QE = 0.4; %QE in low-signal intensity region
 t_d = 100e-9; %dead time in seconds
-t_d = 2*dt; %currently just to investigate Liu OE PMT correction
-paralyzable = 0; %boolean for paralyzable detector
+paralyzable = 1; %boolean for paralyzable detector
 
 
 
 
 %% main loop
 N_received_curve = zeros(size(N_sent_curve));
-N_recorded_curve_nonpar = N_received_curve;
+N_recorded_curve_npar = N_received_curve;
+N_recorded_curve_par = N_received_curve;
 
 %atmospheric absorptions impact signal at all altitudes equally (when
 %ignoring sigma_eff variation with alt/temp)
@@ -126,19 +127,72 @@ for i=1:size(time,2)
         %does not yet include effects of PMT QE
         N_received_curve(i) = N_received_curve(i) + ...
             N_sent_curve(i-j+1)* atmospheric_absorption_factor * (A/(4*pi*z^2)) * constituent_density(ind);
-        
-        %
+    end
+
+
+    if N_received_curve(i) > 0
+        pause(0.01);
+    end
+    %want to convert n_received_curve into a list of photon arrival
+    %timestamps.
+
+    upres_factor = 10;
+    t_lower = (i-1)*dt;
+    t_upper = t;
+    t_interp = t_lower:dt*(1/upres_factor):t_upper;
+    if i==1
+        prev_n_received = 0;
+    else
+        prev_n_received = N_received_curve(i-1);
+    end
+
+    N_exp = zeros(1,size(t_interp,2)-1);
+    arrival_times = [];
+    prev_reached_bin = 1;
+    running_sum = 0;
+    %linear interpolation at upscaled resolution.
+    for j=1:size(t_interp,2)-1
+        % Number of photons expected within higher resolution bin
+        N_exp(j) = (prev_n_received+(j*(1/upres_factor))*(N_received_curve(i)-prev_n_received))/upres_factor;
+        %we want to track the cummulative number of photons we expect to
+        %see through our current bin.
+        running_sum = running_sum + N_exp(j); 
+
+        %we should have seen a photon by this point (expected N photons > 1)
+        % Choose one of the bins in the range from our last received photon to put this photon in.
+        %Choice should be weighted by the expected number of photons
+        %received in that bin.
+        %If we happen to get multiple photons expected in a single step,
+        %distribute them all in the same manner.
+        while running_sum >= 1
+            %select the bin in which we'll log photon, using the expected
+            %photon count in each bin as weight
+            %Randsample acts differently if the first argument is a single
+            %number instead of a vector, need both cases
+            if prev_reached_bin ~= j
+                bin = randsample(prev_reached_bin:j,1,true, N_exp(prev_reached_bin:j));
+            else
+                bin = j;
+            end
+            arrival_times(end+1) = t_lower + (t_upper-t_lower).*rand;
+            running_sum = running_sum-1;
+            prev_reached_bin = j;
+        end
     end
 
     %PMT saturation effects
-    N_recorded_curve_nonpar(i) = PMT_QE(N_received_curve(i), dt, t_d, linear_QE, 0);
-    N_recorded_curve_par(i) = PMT_QE(N_received_curve(i), dt, t_d, linear_QE, 1);
+    npar_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 0);
+    par_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 1);
+
+    N_recorded_curve_npar(i) = sum(npar_detected);
+    N_recorded_curve_par(i) = sum(par_detected);
+
 end
 
 %% begin including noise
 f_n = 1000000; %avg freq of noise events in Hz
 n_n = f_n*dt;
-
+n_n = 0;
 %generate noise photons from a poisson distribution with parameter=f_n*dt
 noise = poissrnd(n_n, size(time));
 
@@ -148,18 +202,25 @@ N_total_received = N_received_curve + noise;
 f = figure;
 ax1 = axes(f);
 hold on
-plot(ax1, time, N_received_curve, 'b-')
-plot(ax1, time, N_total_received, 'r-')
-legend({"$N_{sig,received}$", "$N_{tot,received}$"}, 'interpreter', 'latex')
-title("N Received Photons vs Time")
+plot(ax1, time, N_received_curve/dt, 'k-')
+plot(ax1, time, N_total_received/dt, 'g-')
+plot(ax1, time, N_recorded_curve_npar/dt, 'r-')
+plot(ax1, time, N_recorded_curve_par/dt, 'b-')
+plot(ax1, [min(time),max(time)], [1/t_d,1/t_d], 'k--')
+legend(["$f_{sig,received}$", "$f_{tot,received}$", "$f_{recorded,nonparalyzable}$","$f_{recorded,paralyzable}$", "$f_{dead}$"], 'interpreter', 'latex')
+title("Frequency of Received Photons vs Time")
 xlabel("Time (sec)")
-ylabel("N Received Photons")
+ylabel("Freq. Received Photons (Hz)")
 
 %estimate SNR
 n_noise_tot = sum(noise);
 n_sig_tot = sum(N_total_received);
 SNR_est_simple = n_sig_tot/n_noise_tot;
 text(0,max(N_total_received), sprintf("SNR: %0.3f", SNR_est_simple))
+
+
+
+
 
 % figure
 % xcorr_res = xcorr(constituent_density, power_curve);
