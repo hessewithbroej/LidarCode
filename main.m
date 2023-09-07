@@ -52,7 +52,7 @@ p_on = 1; %laser power in W when on
 
 
 %total time window where events may be happening (accounting for ToF for last photons emitted by laser)
-t_bounds = [0,t_stop+2*z_bounds(2)/c];
+t_bounds = [dt,t_stop+2*z_bounds(2)/c+dt];
 time = t_bounds(1):dt:t_bounds(2); %time axis of power curve
 p_peak = 1; %peak power in W
 
@@ -89,7 +89,7 @@ T_c = 0.95;
 sigma_eff = 1;
 
 %receiver parameters
-A = 100; %receiver area in m^2
+A = 10; %receiver area in m^2
 linear_QE = 0.4; %QE in low-signal intensity region
 t_d = 100e-9; %dead time in seconds
 paralyzable = 1; %boolean for paralyzable detector
@@ -128,66 +128,75 @@ for i=1:size(time,2)
         N_received_curve(i) = N_received_curve(i) + ...
             N_sent_curve(i-j+1)* atmospheric_absorption_factor * (A/(4*pi*z^2)) * constituent_density(ind);
     end
+    %
+    %     %want to convert n_received_curve into a list of photon arrival
+    %     %timestamps.
+    %
+    %     upres_factor = 10;
+    %     t_lower = (i-1)*dt;
+    %     t_upper = t;
+    %     t_interp = t_lower:dt*(1/upres_factor):t_upper;
+    %     if i==1
+    %         prev_n_received = 0;
+    %     else
+    %         prev_n_received = N_received_curve(i-1);
+    %     end
+    %
+    %     N_exp = zeros(1,size(t_interp,2)-1);
+    %     arrival_times = [];
+    %     prev_reached_bin = 1;
+    %     running_sum = 0;
+    %     %linear interpolation at upscaled resolution.
+    %     for j=1:size(t_interp,2)-1
+    %         % Number of photons expected within higher resolution bin
+    %         N_exp(j) = (prev_n_received+(j*(1/upres_factor))*(N_received_curve(i)-prev_n_received))/upres_factor;
+    %         %we want to track the cummulative number of photons we expect to
+    %         %see through our current bin.
+    %         running_sum = running_sum + N_exp(j);
+    %
+    %         %we should have seen a photon by this point (expected N photons > 1)
+    %         % Choose one of the bins in the range from our last received photon to put this photon in.
+    %         %Choice should be weighted by the expected number of photons
+    %         %received in that bin.
+    %         %If we happen to get multiple photons expected in a single step,
+    %         %distribute them all in the same manner.
+    %         while running_sum >= 1
+    %             %select the bin in which we'll log photon, using the expected
+    %             %photon count in each bin as weight
+    %             %Randsample acts differently if the first argument is a single
+    %             %number instead of a vector, need both cases
+    %             if prev_reached_bin ~= j
+    %                 bin = randsample(prev_reached_bin:j,1,true, N_exp(prev_reached_bin:j));
+    %             else
+    %                 bin = j;
+    %             end
+    %             arrival_times(end+1) = t_lower + (t_upper-t_lower).*rand;
+    %             running_sum = running_sum-1;
+    %             prev_reached_bin = j;
+    %         end
+    %     end
 
 
-    if N_received_curve(i) > 0
-        pause(0.01);
-    end
-    %want to convert n_received_curve into a list of photon arrival
-    %timestamps.
-
-    upres_factor = 10;
-    t_lower = (i-1)*dt;
-    t_upper = t;
-    t_interp = t_lower:dt*(1/upres_factor):t_upper;
-    if i==1
-        prev_n_received = 0;
-    else
-        prev_n_received = N_received_curve(i-1);
-    end
-
-    N_exp = zeros(1,size(t_interp,2)-1);
-    arrival_times = [];
-    prev_reached_bin = 1;
-    running_sum = 0;
-    %linear interpolation at upscaled resolution.
-    for j=1:size(t_interp,2)-1
-        % Number of photons expected within higher resolution bin
-        N_exp(j) = (prev_n_received+(j*(1/upres_factor))*(N_received_curve(i)-prev_n_received))/upres_factor;
-        %we want to track the cummulative number of photons we expect to
-        %see through our current bin.
-        running_sum = running_sum + N_exp(j); 
-
-        %we should have seen a photon by this point (expected N photons > 1)
-        % Choose one of the bins in the range from our last received photon to put this photon in.
-        %Choice should be weighted by the expected number of photons
-        %received in that bin.
-        %If we happen to get multiple photons expected in a single step,
-        %distribute them all in the same manner.
-        while running_sum >= 1
-            %select the bin in which we'll log photon, using the expected
-            %photon count in each bin as weight
-            %Randsample acts differently if the first argument is a single
-            %number instead of a vector, need both cases
-            if prev_reached_bin ~= j
-                bin = randsample(prev_reached_bin:j,1,true, N_exp(prev_reached_bin:j));
-            else
-                bin = j;
-            end
-            arrival_times(end+1) = t_lower + (t_upper-t_lower).*rand;
-            running_sum = running_sum-1;
-            prev_reached_bin = j;
-        end
-    end
-
-    %PMT saturation effects
-    npar_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 0);
-    par_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 1);
-
-    N_recorded_curve_npar(i) = sum(npar_detected);
-    N_recorded_curve_par(i) = sum(par_detected);
 
 end
+
+upscale_factor = 10;
+arrival_times = sort(disperse_photons(N_received_curve,time,upscale_factor));
+
+%PMT saturation effects. Boolean of whether a photon was detected
+npar_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 0);
+par_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 1);
+
+%pull only the detected timestamps:
+npar_detected_timestamps = arrival_times(logical(npar_detected));
+par_detected_timestamps = arrival_times(logical(par_detected));
+
+%convert timestamps back to counts per bin
+npar_detected_binned = bin_photons(npar_detected_timestamps,time);
+par_detected_binned = bin_photons(par_detected_timestamps,time);
+
+% N_recorded_curve_npar(i) = sum(npar_detected);
+% N_recorded_curve_par(i) = sum(par_detected);
 
 %% begin including noise
 f_n = 1000000; %avg freq of noise events in Hz
@@ -204,8 +213,8 @@ ax1 = axes(f);
 hold on
 plot(ax1, time, N_received_curve/dt, 'k-')
 plot(ax1, time, N_total_received/dt, 'g-')
-plot(ax1, time, N_recorded_curve_npar/dt, 'r-')
-plot(ax1, time, N_recorded_curve_par/dt, 'b-')
+plot(ax1, time, npar_detected_binned/dt, 'r-')
+plot(ax1, time, par_detected_binned/dt, 'b-')
 plot(ax1, [min(time),max(time)], [1/t_d,1/t_d], 'k--')
 legend(["$f_{sig,received}$", "$f_{tot,received}$", "$f_{recorded,nonparalyzable}$","$f_{recorded,paralyzable}$", "$f_{dead}$"], 'interpreter', 'latex')
 title("Frequency of Received Photons vs Time")
