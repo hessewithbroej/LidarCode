@@ -1,42 +1,49 @@
-function [N_recorded] = PMT_QE(N_received, dt, t_d, linear_QE, paralyzable)
+function [bool_recorded] = PMT_QE(arrival_times, t_d, linear_QE, paralyzable)
 %Attenuates the number of received photons according to the specifications
 %of the PMT/Discriminator system
-%   Currently uses a very basic model that assumes photons are
-%   equally-spaced within a dt window
-
-f_received = N_received/dt;
-f_dead = 1/t_d;
-
-if paralyzable
-
-    %within linear region
-    if f_received <= f_dead
-
-        N_recorded = N_received * linear_QE;
-
-     %saturated paralyzable PMT - will output some suppresed number
-    else
-        
-        %for now, assume that full extinction/paralyzation occurs at
-        %frequencies greater than 2x (1/deadtime), linear interpolation
-        N_recorded = max([0, (f_dead*dt - (f_received-f_dead)*dt) * linear_QE]);
-        
-    end
+% INPUTS:
+%   - arrival_times: numeric array listing the arrival times of photons in
+%   seconds
+%   - t_d: dead time of pmt in seconds
+%   - linear_QE: quantum efficiency of PMT assuming no saturation effects
+%   - paralyzable: boolean, 1=paralyzable, 0=nonparalyzable
+% OUTPUTS:
+%   - bool_recorded: boolean array that flags the received photons that were
+% actually recorded/registered/measured
 
 
-else
+%initialize tracking variables
+bool_recorded = zeros(size(arrival_times));
+prev_received_time = -100000;
+prev_recorded_time = -100000;
 
-    %within linear region
-    if f_received <= f_dead
+%% main loop - loop over arrival times and determine which photons will be counted
+for i=1:max(size(arrival_times))
 
-        N_recorded = N_received * linear_QE;
+    if paralyzable
 
-    %saturated nonparalyzable PMT - will output one pulse per deadtime
+        if prev_received_time + t_d < arrival_times(i)
+
+            %poll random number to simulate QE effects. Even if meets
+            %deadtime criteria, might not be recorded because QE < 1
+            bool_recorded(i) = rand(1) < linear_QE;
+
+        end
+
     else
 
-        N_recorded = (f_dead * dt) * linear_QE;
+        if prev_recorded_time + t_d < arrival_times(i)
+
+            %poll random number to simulate QE effects. Even if meets
+            %deadtime criteria, might not be recorded because QE < 1
+            bool_recorded(i) = rand(1) < linear_QE;
+            prev_recorded_time = arrival_times(i);
+        end
 
     end
+
+    %always update most recent received time
+    prev_received_time = arrival_times(i);
 
 end
 
