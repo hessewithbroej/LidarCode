@@ -1,9 +1,13 @@
 function [photon_count_bins] = bin_photons(event_times,time_bins)
 %bin_photons Bins a list of event times into a specified time bin vector.
 %Effectively the opposite of disperse_photons.
-%   Detailed explanation goes here
+%   Assumes that time_bins is strictly increasing!
 
 photon_count_bins = zeros(size(time_bins));
+
+if ~any(time_bins == sort(time_bins))
+    error("Time bins are not strictly increasing!!!")
+end
 
 %bin all events
 for i=1:max(size(event_times))

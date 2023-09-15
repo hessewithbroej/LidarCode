@@ -15,7 +15,7 @@ E_photon = h*c/lambda; %photon energy
 z_bounds = [1e+3,120e+3];
 dz = 1000;
 altitudes = z_bounds(1):dz:z_bounds(2); %altitude in m
-constituent_density = [repmat(0,[1,75]), linspace(0,100,10), repmat(100,[1,10]), linspace(100,1,25)]; %unitless density of constituent species
+constituent_density = [zeros([1,75]), linspace(0,100,10), repmat(100,[1,10]), linspace(100,1,25)]; %unitless density of constituent species
 % constituent_density = [zeros(1,75), ones(1,45)];
 constituent_density = constituent_density/sum(constituent_density); %density/concentration normalized such that full series sums to 1
 
@@ -97,111 +97,36 @@ paralyzable = 1; %boolean for paralyzable detector
 
 
 
-%% main loop
-N_received_curve = zeros(size(N_sent_curve));
-N_recorded_curve_npar = N_received_curve;
-N_recorded_curve_par = N_received_curve;
+%% generate return signal
 
-%atmospheric absorptions impact signal at all altitudes equally (when
-%ignoring sigma_eff variation with alt/temp)
-atmospheric_absorption_factor = T_a*T_c*sigma_eff*T_c*T_a; %scaling factor to account for atmospheric absorptions
+%return signal received by PMT (before QE, saturation etc)
+N_received_curve = generate_return(N_sent_curve, time, dt, altitudes, constituent_density, T_a, T_c, sigma_eff);
 
-%compute N received photons at each time bin
-for i=1:size(time,2)
+%convert binned photon counts into a list of arrival times
+%set upscale factor such that interpolated bin width is < 50% of the photon
+%deadtime. Ensures sufficient resolution for photon assignment to reduce
+%effects of stochasticity on pmt saturation
+upscale_factor = 10^(1+ceil( log10(dt/t_d)));
+arrival_times = (disperse_photons(N_received_curve,time,upscale_factor));
 
-    t = i*dt;
-
-    %compute effects at each altitude - will be bounded by overall passage
-    %of time & ToF consideratons
-    for j=i:-1:1
-        z = j*dz; %altitude bin - (considering factor of 2 ToF)
-
-        %determine index of current altitude bin in "altitudes"
-        [~,ind] = min(abs(altitudes-z));
-
-        %can ignore returns from above our maximum altitude
-        if z > max(altitudes)
-            continue
-        end
-
-        %does not yet include effects of PMT QE
-        N_received_curve(i) = N_received_curve(i) + ...
-            N_sent_curve(i-j+1)* atmospheric_absorption_factor * (A/(4*pi*z^2)) * constituent_density(ind);
-    end
-    %
-    %     %want to convert n_received_curve into a list of photon arrival
-    %     %timestamps.
-    %
-    %     upres_factor = 10;
-    %     t_lower = (i-1)*dt;
-    %     t_upper = t;
-    %     t_interp = t_lower:dt*(1/upres_factor):t_upper;
-    %     if i==1
-    %         prev_n_received = 0;
-    %     else
-    %         prev_n_received = N_received_curve(i-1);
-    %     end
-    %
-    %     N_exp = zeros(1,size(t_interp,2)-1);
-    %     arrival_times = [];
-    %     prev_reached_bin = 1;
-    %     running_sum = 0;
-    %     %linear interpolation at upscaled resolution.
-    %     for j=1:size(t_interp,2)-1
-    %         % Number of photons expected within higher resolution bin
-    %         N_exp(j) = (prev_n_received+(j*(1/upres_factor))*(N_received_curve(i)-prev_n_received))/upres_factor;
-    %         %we want to track the cummulative number of photons we expect to
-    %         %see through our current bin.
-    %         running_sum = running_sum + N_exp(j);
-    %
-    %         %we should have seen a photon by this point (expected N photons > 1)
-    %         % Choose one of the bins in the range from our last received photon to put this photon in.
-    %         %Choice should be weighted by the expected number of photons
-    %         %received in that bin.
-    %         %If we happen to get multiple photons expected in a single step,
-    %         %distribute them all in the same manner.
-    %         while running_sum >= 1
-    %             %select the bin in which we'll log photon, using the expected
-    %             %photon count in each bin as weight
-    %             %Randsample acts differently if the first argument is a single
-    %             %number instead of a vector, need both cases
-    %             if prev_reached_bin ~= j
-    %                 bin = randsample(prev_reached_bin:j,1,true, N_exp(prev_reached_bin:j));
-    %             else
-    %                 bin = j;
-    %             end
-    %             arrival_times(end+1) = t_lower + (t_upper-t_lower).*rand;
-    %             running_sum = running_sum-1;
-    %             prev_reached_bin = j;
-    %         end
-    %     end
-
-
-
-end
-
-upscale_factor = 10;
-arrival_times = sort(disperse_photons(N_received_curve,time,upscale_factor));
-
-%PMT saturation effects. Boolean of whether a photon was detected
+%PMT saturation effects. Boolean list of whether a photon was detected
 npar_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 0);
 par_detected = PMT_QE(sort(arrival_times), t_d, linear_QE, 1);
 
-%pull only the detected timestamps:
+%save only the detected timestamps:
 npar_detected_timestamps = arrival_times(logical(npar_detected));
 par_detected_timestamps = arrival_times(logical(par_detected));
 
-%convert timestamps back to counts per bin
+%convert detected timestamps back to counts per bin
 npar_detected_binned = bin_photons(npar_detected_timestamps,time);
 par_detected_binned = bin_photons(par_detected_timestamps,time);
 
-% N_recorded_curve_npar(i) = sum(npar_detected);
-% N_recorded_curve_par(i) = sum(par_detected);
 
 %% begin including noise
 f_n = 1000000; %avg freq of noise events in Hz
 n_n = f_n*dt;
 n_n = 0;
+
 %generate noise photons from a poisson distribution with parameter=f_n*dt
 noise = poissrnd(n_n, size(time));
 

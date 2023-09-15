@@ -25,11 +25,14 @@ function [event_times] = disperse_photons(photon_count_bins,time_bins,upscale_fa
 %       - time_bins: vector containing the right edges of each original bin in
 %            photon_count_bins. First bin's left edge is assumed to be 0
 %       - upscale_factor: re-sampling resolution increase factor for more
-%            precise distribution of photons. Must be integer & >=1, 10 is a good starting
-%            point
+%            precise distribution of photons within a bin. Must be integer
+%            and >=1, 10 is a good starting point
 %   OUTPUTS:
 %       - event_times: vector of photon event timestamps
 
+if ~mod(upscale_factor,1) == 0
+    error("upscale_factor must be integer valued and >= 1")
+end
 
 
 %want to convert photon_count_bins into a list of photon arrival
