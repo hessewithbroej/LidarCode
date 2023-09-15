@@ -7,9 +7,6 @@ x_start = xs(1);
 x_stop = xs(2);
 dx = xs(3);
 
-%stdev expressed in terms of number of indices/bins
-stdev = stdev*dx;
-
 %generate gaussian
 curve = 1/sqrt(2*pi*stdev) * exp(-0.5*( ((x_start:dx:x_stop)-mu)/stdev ).^2);
 

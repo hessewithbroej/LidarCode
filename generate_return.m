@@ -1,9 +1,11 @@
-function [N_received_curve] = generate_return(N_sent_curve, time, dt, altitudes, constituent_density, T_a, T_c, sigma_eff)
+function [N_received_curve] = generate_return(N_sent_curve, time, dt, altitudes, constituent_density, T_a, T_c, sigma_eff, A)
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 
-
+N_received_curve = zeros(size(N_sent_curve));
 atmospheric_absorption_factor = T_a*T_c*sigma_eff*T_c*T_a; %scaling factor to account for atmospheric absorptions
+dz = mean(diff(altitudes));
+
 
 %compute N received photons at each time bin
 for i=1:size(time,2)

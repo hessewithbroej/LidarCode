@@ -15,9 +15,10 @@ E_photon = h*c/lambda; %photon energy
 z_bounds = [1e+3,120e+3];
 dz = 1000;
 altitudes = z_bounds(1):dz:z_bounds(2); %altitude in m
-constituent_density = [zeros([1,75]), linspace(0,100,10), repmat(100,[1,10]), linspace(100,1,25)]; %unitless density of constituent species
-% constituent_density = [zeros(1,75), ones(1,45)];
-constituent_density = constituent_density/sum(constituent_density); %density/concentration normalized such that full series sums to 1
+%constituent_density = [zeros([1,75]), linspace(0,100,10), repmat(100,[1,10]), linspace(100,1,25)]; %unitless density of constituent species
+%constituent_density = constituent_density/sum(constituent_density); %density/concentration normalized such that full series sums to 1
+
+constituent_density = generate_gaussian(85000,3000, [z_bounds(1),z_bounds(2),dz], 1, 5);
 
 dt = 2*dz/c; %time step for data collection. Gives altitude resolution of dz (accounting for there and back travel)
 
@@ -27,44 +28,29 @@ plot(altitudes,constituent_density)
 title("Constituent Density vs Altitude")
 xlabel("Altitude (m)")
 ylabel("Constituent Density (normalized)")
-%
-%Square laser power output
-% t_start = 0; %laser turn on time (s)
-% t_stop = t_start+dt; %laser turn off time (s)
-% p_on = 1; %laser power in W when on
-%
+
+
+
+p_peak = 1; %laser peak power in W
+t_rise = ceil((200e-6)/dt)*dt; %time from 10%->90% peak laser output
+
+perc_10 = -2.1460; %z-score for 10% of max of gaussian. CONSTANT DO NOT CHANGE
+perc_90 = -0.4590; %z-score for 90% of max of gaussian. CONSTANT DO NOT CHANGE
+stdev = ceil((t_rise/(perc_90-perc_10))/dt)*dt; %corresponding stdev of gaussian given rise time
+
+%generate power curve now that we know effective stdev of gaussian given
+%the rise time between 10% and 90% peak output
+power_curve = generate_gaussian(2*t_rise,stdev,[0,4*t_rise,dt],1,0);
+power_curve = power_curve/(max(power_curve))*p_peak;
+
+t_stop = 4*t_rise; %time when laser power is 0
+
 % %total time window where events may be happening (accounting for ToF for last photons emitted by laser)
-% t_bounds = [0,t_stop+2*z_bounds(2)/c];
-% time = t_bounds(1):dt:t_bounds(2); %time axis of power curve
-%
-% %use this for delta & square function power curve
-% power_curve = [zeros(1,nearestDiv(t_start-t_bounds(1),dt)), p_on * ones(1,nearestDiv(t_stop-t_start,dt)), zeros(1,nearestDiv(t_bounds(2)+dt-t_stop,dt))];
-
-
-%for gaussian-like curves
-stdev = 3*dt; %standard deviation of laser power curve is 3 dt bins
-cutoff_num_stds = 5; %truncate guassian after n stds
-
-t_start = 0; %laser turn on time (s)
-t_stop = t_start+(stdev/dt)*cutoff_num_stds*2*dt; %laser turn off time (s)
-p_on = 1; %laser power in W when on
-
-
-
-%total time window where events may be happening (accounting for ToF for last photons emitted by laser)
 t_bounds = [dt,t_stop+2*z_bounds(2)/c+dt];
 time = t_bounds(1):dt:t_bounds(2); %time axis of power curve
-p_peak = 1; %peak power in W
 
-%use this for a guassian-like power curve
-power_curve = 1/(2*pi*stdev) * exp(-0.5*( ((t_start:dt:t_stop)-(stdev*cutoff_num_stds))/stdev ).^2);
-
-%re-scale gaussian s.t. max(power_curve) = p_peak
-power_curve = [power_curve/max(power_curve)*p_peak, zeros(1,size(time,2)-size(power_curve,2))];
-
-
-% figure
-% plot(time,power_curve);
+%append zeros on laser power curve so it's the same length as altitude, etc
+power_curve = [power_curve, zeros([1,size(time,2)-size(power_curve,2)])];
 
 %generate curve of N_sent photons over time
 energy_curve = power_curve*dt; %total energy emitted by laser (j) at each timestep
@@ -89,7 +75,7 @@ T_c = 0.95;
 sigma_eff = 1;
 
 %receiver parameters
-A = 10; %receiver area in m^2
+A = 1; %receiver area in m^2
 linear_QE = 0.4; %QE in low-signal intensity region
 t_d = 100e-9; %dead time in seconds
 paralyzable = 1; %boolean for paralyzable detector
@@ -100,7 +86,7 @@ paralyzable = 1; %boolean for paralyzable detector
 %% generate return signal
 
 %return signal received by PMT (before QE, saturation etc)
-N_received_curve = generate_return(N_sent_curve, time, dt, altitudes, constituent_density, T_a, T_c, sigma_eff);
+N_received_curve = generate_return(N_sent_curve, time, dt, altitudes, constituent_density, T_a, T_c, sigma_eff,A);
 
 %convert binned photon counts into a list of arrival times
 %set upscale factor such that interpolated bin width is < 50% of the photon
@@ -133,6 +119,20 @@ noise = poissrnd(n_n, size(time));
 N_total_received = N_received_curve + noise;
 
 %% plots
+f = figure;
+ax1 = axes(f);
+hold on
+plot(ax1, time, N_received_curve, 'k-')
+plot(ax1, time, N_total_received, 'g-')
+plot(ax1, time, npar_detected_binned, 'r-')
+plot(ax1, time, par_detected_binned, 'b-')
+legend(["$N_{sig,received}$", "$N_{tot,received}$", "$N_{recorded,nonparalyzable}$","$N_{recorded,paralyzable}$"], 'interpreter', 'latex')
+title("Number of Received Photons vs Time")
+xlabel("Time (sec)")
+ylabel("Num. Received Photons")
+
+
+
 f = figure;
 ax1 = axes(f);
 hold on
