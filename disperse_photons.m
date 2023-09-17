@@ -60,9 +60,9 @@ for i=1:max(size(photon_count_bins))
     end
 
     %for debug
-    if photon_count_bins(i) >0
-        pause(0.1)
-    end
+%     if photon_count_bins(i) >0
+%         pause(0.1)
+%     end
 
     %linear interpolation at upscaled resolution.
     for j=1:size(t_interp,2)-1
@@ -151,6 +151,7 @@ for i=1:max(size(photon_count_bins))
             event_times(end+1) = subbin_lower + (subbin_upper-subbin_lower)*rand;
             running_sum = running_sum-1;
             prev_reached_bin = [i,j];
+
         end
     end
 
