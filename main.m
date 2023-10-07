@@ -173,7 +173,7 @@ for i=1:size(arrival_times_cell,2)
     net_detected = net_detected + par_detected_subbinned;
 end
 %avg number of photons detected in each bin
-H = net_detected/size(arrival_times_cell,2);
+H = net_detected/size(arrival_times_cell,2); %this plus the preceding for loop is Liu's equation 11
 % H = 1-exp(-net_detected);
 H = movmean(H,10);
 rt = toc
@@ -181,7 +181,7 @@ figure
 hold on
 plot(sub_times,H)
 %%
-[P_receive_no_n,P_detect_no_n] = calculate_noise_probability(lowest_constituent_subbin,n_td,H);
+[P_receive_no_n,P_detect_no_n] = calculate_noise_probability(lowest_constituent_subbin,n_td,H); %Liu's equation 12 inside here
 
 par_detected_corrected_subbin = zeros(size(H));
 par_detected_corrected_subbin_saturated = zeros(size(H));
@@ -192,20 +192,20 @@ P_receive_no_ns_list_saturated = [repmat(P_receive_no_n, [1,lowest_constituent_s
 P_receive_no_ns_list_unsaturated = [repmat(P_receive_no_n, [1,lowest_constituent_subbin]), zeros([1,size(par_detected_subbinned,2)-lowest_constituent_subbin])];
 
 
-P_receive_no_ns = 1-H(lowest_constituent_subbin)/(P_receive_no_n^n_td);
+P_receive_no_ns = 1-H(lowest_constituent_subbin)/(P_receive_no_n^n_td); %liu eqn 13
 P_receive_no_ns_list(lowest_constituent_subbin) = P_receive_no_ns;
 P_receive_no_ns_list_saturated(lowest_constituent_subbin) = P_receive_no_ns;
 P_receive_no_ns_list_unsaturated(lowest_constituent_subbin) = P_receive_no_ns;
 
-par_detected_corrected_subbin(lowest_constituent_subbin) = max([0,-log(P_receive_no_ns)-n_n]);
+par_detected_corrected_subbin(lowest_constituent_subbin) = max([0,-log(P_receive_no_ns)-n_n]); %liu eqn 14
 par_detected_corrected_saturated_subbin(lowest_constituent_subbin) = max([0,-log(P_receive_no_ns)-n_n]);
 par_detected_corrected_unsaturated_subbin(lowest_constituent_subbin) = max([0,-log(P_receive_no_ns)-n_n]);
 
 
 for i=lowest_constituent_subbin+1:max(size(par_detected_subbinned))
 
-
-    [P_receive_no_ns_saturated, P_receive_no_ns_unsaturated] = calculate_receival_probability(H(i), n_td);
+    %applying liu eqn 14 to all bins i > m
+    [P_receive_no_ns_saturated, P_receive_no_ns_unsaturated] = calculate_receival_probability(H(i), n_td); 
     P_receive_no_ns = 1-H(i)/P_receive_no_ns_list(i-1);
 
     P_receive_no_ns_list(i) = P_receive_no_ns;
